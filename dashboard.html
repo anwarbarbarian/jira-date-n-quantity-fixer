@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>JIRA Due Date and Quantity Fixer</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>JIRA Due Date and Quantity Fixer</h1>
+        <p>Validate Due dates and synchronize Quantity with AEM Page Path lines.</p>
+      </div>
+      <span id="runBadge" class="badge idle">Idle</span>
+    </header>
+
+    <section class="panel">
+      <label for="ticketInput">Jira ticket IDs or URLs</label>
+      <textarea id="ticketInput" rows="7" placeholder="ABC-123&#10;ABC-124&#10;https://jira.secext.samsung.net/browse/ABC-125"></textarea>
+      <div class="hint">Separate tickets with new lines, commas, spaces, or semicolons. Duplicates are removed.</div>
+    </section>
+
+    <details class="panel settings">
+      <summary>Validation settings</summary>
+      <div class="settings-grid">
+        <label>
+          Due field label
+          <input id="dueDateLabel" type="text" value="Due">
+        </label>
+        <label>
+          Live Date field label
+          <input id="liveDateLabel" type="text" value="Live Date">
+        </label>
+        <label class="wide">
+          Due CSS selector <span class="optional">(optional override)</span>
+          <input id="dueDateSelector" type="text" value="#due-date time" placeholder="#due-date time">
+        </label>
+        <label class="wide">
+          Live Date CSS selector <span class="optional">(optional override)</span>
+          <input id="liveDateSelector" type="text" value="#customfield_16801-val time" placeholder="#customfield_16801-val time">
+        </label>
+        <label>
+          Date validation rule
+          <input type="text" value="Due is exactly 2 days after Live Date" readonly aria-readonly="true">
+        </label>
+        <label>
+          Ambiguous numeric dates
+          <select id="numericDateOrder">
+            <option value="DMY">Day / Month / Year</option>
+            <option value="MDY">Month / Day / Year</option>
+          </select>
+        </label>
+        <label>
+          Ticket timeout (seconds)
+          <input id="timeoutSeconds" type="number" min="30" max="180" step="5" value="60">
+        </label>
+        <label class="checkbox-label wide">
+          <input id="liveDateRequiredForRun" type="checkbox">
+          Require Live Date field in the DOM before analysis (disable to run Quantity when Live Date is missing)
+        </label>
+        <label class="checkbox-label wide">
+          <input id="dueDateRequiredForRun" type="checkbox">
+          Require Due field in the DOM before analysis (disable for tickets without a Due date)
+        </label>
+        <label class="checkbox-label wide">
+          <input id="skipDueDateValidationWhenMissing" type="checkbox" checked>
+          Skip Due date rule when the Due field is missing from the issue view
+        </label>
+        <label class="checkbox-label wide">
+          <input id="skipLiveDateValidationWhenMissing" type="checkbox" checked>
+          Skip Due date rule when the Live Date field is missing from the issue view
+        </label>
+        <label class="wide">
+          AEM Page Publish Time CSS selector <span class="optional">(optional override)</span>
+          <input id="aemPagePublishTimeSelector" type="text" value="#customfield_14005-val" placeholder="#customfield_14005-val">
+        </label>
+        <label class="wide">
+          Issue labels CSS selector <span class="optional">(optional override)</span>
+          <input id="issueLabelsSelector" type="text" value="#wrap-labels .labels a.lozenge" placeholder="#wrap-labels .labels a.lozenge">
+        </label>
+        <label class="checkbox-label wide">
+          <input id="skipDueDateRuleWhenPublishTimePresent" type="checkbox" checked>
+          Skip Due date rule and auto-update when AEM Page Publish Time is on the issue (scheduled tickets)
+        </label>
+        <label class="checkbox-label wide">
+          <input id="useLiveDateFromStatusHistory" type="checkbox" checked>
+          Infer Live Date from issue history (READY FOR LIVE → LIVE) when Live Date is missing
+        </label>
+        <label class="checkbox-label wide">
+          <input id="autoUpdateLiveDateFromHistory" type="checkbox" checked>
+          Write inferred Live Date to the issue before updating Due
+        </label>
+        <label class="checkbox-label wide">
+          <input id="autoUpdateDueDate" type="checkbox" checked>
+          Automatically update Due to Live Date + 2 days when the date check fails
+        </label>
+        <label class="checkbox-label wide">
+          <input id="autoUpdateDueDateOnlyWhenTooEarly" type="checkbox" checked>
+          Only auto-update Due when it is before Live Date + 2 days (leave later Due dates unchanged)
+        </label>
+        <label class="wide">
+          AEM Page Path CSS selector <span class="optional">(optional override)</span>
+          <input id="aemPagePathSelector" type="text" value="#customfield_14002-val .twixi-wrap .flooded" placeholder="#customfield_14002-val .twixi-wrap .flooded">
+        </label>
+        <label class="checkbox-label wide">
+          <input id="autoExpandAemPagePath" type="checkbox" checked>
+          Expand collapsed AEM Page Path before counting lines
+        </label>
+        <label class="wide">
+          Quantity view CSS selector <span class="optional">(optional override)</span>
+          <input id="quantityViewSelector" type="text" value="#customfield_13618-val" placeholder="#customfield_13618-val">
+        </label>
+        <label class="wide">
+          Quantity edit input CSS selector <span class="optional">(optional override)</span>
+          <input id="quantityInputSelector" type="text" value="#customfield_13618" placeholder="#customfield_13618">
+        </label>
+        <label class="checkbox-label wide">
+          <input id="autoUpdateQuantity" type="checkbox" checked>
+          Automatically update Quantity to the AEM Page Path line count when validation fails
+        </label>
+        <div class="hint wide">Default label rule: the <code>gnb</code> label adds +1 to the AEM path count before Quantity validation and update.</div>
+      </div>
+    </details>
+
+    <section class="actions">
+      <button id="startButton" class="primary">Start validation</button>
+      <button id="stopButton" class="danger" disabled>Stop</button>
+      <button id="exportButton" disabled>Export CSV</button>
+      <button id="clearButton" disabled>Clear</button>
+    </section>
+
+    <section class="panel progress-panel">
+      <div class="progress-row">
+        <strong id="progressText">Ready</strong>
+        <span id="progressCount">0 / 0</span>
+      </div>
+      <progress id="progressBar" value="0" max="1"></progress>
+      <div id="message" class="message" role="status"></div>
+    </section>
+
+    <section class="results-section">
+      <div class="results-heading">
+        <h2>Results</h2>
+        <span id="resultSummary"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Ticket</th>
+              <th>Due</th>
+              <th>Live Date</th>
+              <th>Date</th>
+              <th>Quantity</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody">
+            <tr class="empty-row"><td colspan="5">No results yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="lib/settings-utils.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

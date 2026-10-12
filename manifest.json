@@ -1,0 +1,58 @@
+{
+  "manifest_version": 3,
+  "name": "JIRA Due Date and Quantity Fixer",
+  "version": "1.0.1",
+  "description": "Validates Jira Due and AEM Page Path Quantity, replacing incorrect existing Quantity values and verifying the persisted result.",
+  "minimum_chrome_version": "102",
+  "permissions": [
+    "alarms",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://jira.secext.samsung.net/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "JIRA Due Date and Quantity Fixer",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://jira.secext.samsung.net/*"
+      ],
+      "js": [
+        "lib/timing.js",
+        "lib/dom-utils.js",
+        "lib/date-utils.js",
+        "lib/aem-utils.js",
+        "lib/jira-history-utils.js",
+        "lib/settings-utils.js",
+        "lib/input-writer.js",
+        "content/bootstrap.js",
+        "content/page-readiness.js",
+        "content/field-finders.js",
+        "content/activity-history.js",
+        "content/jira-ui-actions.js",
+        "content/analyse-ticket.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

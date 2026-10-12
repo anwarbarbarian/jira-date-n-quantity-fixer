@@ -1,0 +1,13 @@
+{
+  "name": "jira-due-live-validator",
+  "version": "1.11.0",
+  "private": true,
+  "description": "Chrome extension tests for JIRA Due Date and Quantity Fixer",
+  "scripts": {
+    "test": "node --test tests/**/*.test.js",
+    "validate": "node scripts/validate-extension.js"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
+  }
+}
