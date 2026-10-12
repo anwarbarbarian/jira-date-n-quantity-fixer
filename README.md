@@ -19,7 +19,7 @@ For each ticket, the extension performs two independent validations.
 
 1. Reads **Live Date** from `#customfield_16801-val time`.
 2. Reads **Due** from `#due-date time`.
-3. Requires **Due = Live Date + exactly 2 calendar days**.
+3. Requires **Due >= Live Date + 2 calendar days**.
 4. When the value is incorrect, it uses Jira inline editing and the **Edit Issue** fallback to update and verify Due.
 
 ### 2. AEM Page Path and Quantity validation
