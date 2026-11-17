@@ -332,6 +332,17 @@
 
   async function updateDueDateViaUi(targetDate, settings, ticket, dueUiOptions = {}) {
     const targetDateIso = formatIsoDate(targetDate);
+    const issueTypeName = Content.detectIssueTypeName?.() || '';
+    if (JV.isDueDateSkippedIssueType?.(issueTypeName, settings)) {
+      return {
+        attempted: false,
+        success: false,
+        status: 'NOT_APPLICABLE',
+        targetDateIso,
+        submittedValue: '',
+        message: JV.dueRuleSkippedForIssueTypeMessage(issueTypeName)
+      };
+    }
     if (
       isAemPagePublishTimePresent(settings)
       && settings.skipDueDateRuleWhenPublishTimePresent !== false

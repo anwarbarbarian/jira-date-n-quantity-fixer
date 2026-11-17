@@ -16,6 +16,7 @@ const {
   issueFieldsReady,
   isAemOptionalIssueType,
   isQuantitySkippedIssueType,
+  isDueDateSkippedIssueType,
   usesFixedQuantityWithoutAem,
   fixedQuantityForAemOptionalIssue,
   normaliseDetectedIssueTypeName,
@@ -24,7 +25,7 @@ const {
 
 test('sanitiseSettings clamps timeout and preserves supported values', () => {
   const settings = sanitiseSettings({
-    settingsVersion: 21,
+    settingsVersion: 22,
     timeoutSeconds: 999,
     numericDateOrder: 'MDY',
     dueDateSelector: '#due-date time',
@@ -65,19 +66,23 @@ test('selectorRoot returns the first selector segment', () => {
 });
 
 test('issueFieldsReady allows missing Live Date when liveDateRequiredForRun is false', () => {
-  const settings = sanitiseSettings({ settingsVersion: 21, liveDateRequiredForRun: false });
+  const settings = sanitiseSettings({ settingsVersion: 22, liveDateRequiredForRun: false });
   assert.equal(
     issueFieldsReady(settings, { duePresent: true, livePresent: false, aemPresent: true }),
     true
   );
   assert.equal(
-    issueFieldsReady(settings, { duePresent: true, livePresent: false, aemPresent: false }),
+    issueFieldsReady(settings, { duePresent: true, livePresent: false, aemPresent: false, aemRequired: false }),
+    true
+  );
+  assert.equal(
+    issueFieldsReady(settings, { duePresent: true, livePresent: false, aemPresent: false, aemRequired: true }),
     false
   );
 });
 
 test('issueFieldsReady requires Live Date when liveDateRequiredForRun is true', () => {
-  const settings = sanitiseSettings({ settingsVersion: 21, liveDateRequiredForRun: true });
+  const settings = sanitiseSettings({ settingsVersion: 22, liveDateRequiredForRun: true });
   assert.equal(
     issueFieldsReady(settings, { duePresent: true, livePresent: false, aemPresent: true }),
     false
@@ -89,7 +94,7 @@ test('issueFieldsReady requires Live Date when liveDateRequiredForRun is true', 
 });
 
 test('issueFieldsReady allows missing Due when dueDateRequiredForRun is false', () => {
-  const settings = sanitiseSettings({ settingsVersion: 21, dueDateRequiredForRun: false });
+  const settings = sanitiseSettings({ settingsVersion: 22, dueDateRequiredForRun: false });
   assert.equal(
     issueFieldsReady(settings, { duePresent: false, livePresent: true, aemPresent: true }),
     true
@@ -97,7 +102,7 @@ test('issueFieldsReady allows missing Due when dueDateRequiredForRun is false', 
 });
 
 test('issueFieldsReady requires Due when dueDateRequiredForRun is true', () => {
-  const settings = sanitiseSettings({ settingsVersion: 21, dueDateRequiredForRun: true });
+  const settings = sanitiseSettings({ settingsVersion: 22, dueDateRequiredForRun: true });
   assert.equal(
     issueFieldsReady(settings, { duePresent: false, livePresent: true, aemPresent: true }),
     false
@@ -105,7 +110,7 @@ test('issueFieldsReady requires Due when dueDateRequiredForRun is true', () => {
 });
 
 test('issueFieldsReady allows missing AEM when aemRequired is false', () => {
-  const settings = sanitiseSettings({ settingsVersion: 21 });
+  const settings = sanitiseSettings({ settingsVersion: 22 });
   assert.equal(
     issueFieldsReady(settings, { duePresent: true, livePresent: true, aemPresent: false, aemRequired: false }),
     true
@@ -113,7 +118,7 @@ test('issueFieldsReady allows missing AEM when aemRequired is false', () => {
 });
 
 test('isAemOptionalIssueType matches Static Page WSC Production', () => {
-  const settings = sanitiseSettings({ settingsVersion: 21 });
+  const settings = sanitiseSettings({ settingsVersion: 22 });
   assert.equal(isAemOptionalIssueType('Static Page WSC Production', settings), true);
   assert.equal(isAemOptionalIssueType('Other Issue Type', settings), false);
   assert.equal(fixedQuantityForAemOptionalIssue(settings), 1);
@@ -122,10 +127,18 @@ test('isAemOptionalIssueType matches Static Page WSC Production', () => {
 });
 
 test('PDP Publishing Request skips AEM and Quantity rules', () => {
-  const settings = sanitiseSettings({ settingsVersion: 21 });
+  const settings = sanitiseSettings({ settingsVersion: 22 });
   assert.equal(isQuantitySkippedIssueType('PDP Publishing Request', settings), true);
+  assert.equal(isDueDateSkippedIssueType('PDP Publishing Request', settings), true);
   assert.equal(isAemOptionalIssueType('PDP Publishing Request', settings), true);
   assert.equal(usesFixedQuantityWithoutAem('PDP Publishing Request', settings), false);
+});
+
+test('PDP Publishing Request skips Due date rule and auto-update', () => {
+  const settings = sanitiseSettings({ settingsVersion: 22 });
+  const pdpTitle = 'PDP Publishing Request - To request publishing of a PDP';
+  assert.equal(isDueDateSkippedIssueType(pdpTitle, settings), true);
+  assert.equal(isDueDateSkippedIssueType('Other Issue Type', settings), false);
 });
 
 test('normaliseDetectedIssueTypeName strips Jira title suffix after dash', () => {
@@ -140,20 +153,20 @@ test('normaliseDetectedIssueTypeName strips Jira title suffix after dash', () =>
 });
 
 test('issue type lists match Jira img title strings with description suffix', () => {
-  const settings = sanitiseSettings({ settingsVersion: 21 });
+  const settings = sanitiseSettings({ settingsVersion: 22 });
   const pdpTitle = 'PDP Publishing Request - Long description from img[title]';
   assert.equal(isQuantitySkippedIssueType(pdpTitle, settings), true);
   assert.equal(isAemOptionalIssueType(pdpTitle, settings), true);
 });
 
 test('sanitiseSettings includes default gnb quantity label bonus', () => {
-  const settings = sanitiseSettings({ settingsVersion: 21 });
+  const settings = sanitiseSettings({ settingsVersion: 22 });
   assert.deepEqual(settings.quantityLabelBonuses, [{ label: 'gnb', bonus: 1 }]);
   assert.equal(settings.issueLabelsSelector, '#wrap-labels .labels a.lozenge');
 });
 
 test('isAemPagePublishTimePresent detects customfield_14005-val', () => {
-  const settings = sanitiseSettings({ settingsVersion: 21 });
+  const settings = sanitiseSettings({ settingsVersion: 22 });
   const dom = new JSDOM('<div id="customfield_14005-val"><time>06/Oct/26</time></div>');
   global.document = dom.window.document;
   assert.equal(isAemPagePublishTimePresent(settings), true);

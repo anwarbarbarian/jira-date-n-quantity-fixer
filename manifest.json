@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "JIRA Due Date and Quantity Fixer",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Validates Jira Due and AEM Page Path Quantity, replacing incorrect existing Quantity values and verifying the persisted result.",
   "minimum_chrome_version": "102",
   "permissions": [

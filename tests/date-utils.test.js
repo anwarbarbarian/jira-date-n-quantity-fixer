@@ -179,6 +179,34 @@ test('shouldAttemptDueDateUpdate runs when Live Date comes from issue history', 
   );
 });
 
+test('resolveDateValidation skips Due rule for configured issue types', () => {
+  const due = parseDate('01/Oct/26', 'DMY');
+  const live = parseDate('01/Oct/26', 'DMY');
+  const rule = 'due_exactly_two_days_after_live';
+
+  const result = resolveDateValidation(due, live, rule, {
+    duePresent: true,
+    livePresent: true,
+    skipDueRuleForIssueType: true,
+    issueTypeName: 'PDP Publishing Request'
+  });
+  assert.equal(result.status, 'SKIPPED');
+  assert.match(result.message, /PDP Publishing Request/i);
+});
+
+test('shouldAttemptDueDateUpdate does not run when Due rule is skipped for issue type', () => {
+  const due = parseDate('01/Oct/26', 'DMY');
+  const live = parseDate('01/Oct/26', 'DMY');
+  const rule = 'due_exactly_two_days_after_live';
+
+  assert.equal(
+    shouldAttemptDueDateUpdate(due, live, rule, true, true, true, {
+      skipDueRuleForIssueType: true
+    }),
+    false
+  );
+});
+
 test('shouldAttemptDueDateUpdate does not run when AEM Page Publish Time is on the issue view', () => {
   const due = parseDate('10/Aug/26', 'DMY');
   const live = parseDate('10/Aug/26', 'DMY');

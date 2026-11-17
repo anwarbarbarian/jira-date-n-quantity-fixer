@@ -4,7 +4,7 @@
   const Content = globalThis.JiraValidatorContent = globalThis.JiraValidatorContent || {};
   const JV = globalThis.JiraValidator;
   const { sleep, normaliseText, isVisible, runMainWorldAction, TIMING } = Content;
-  const { fieldPresent, issueFieldsReady, isAemOptionalIssueType, normaliseDetectedIssueTypeName } = JV;
+  const { fieldPresent, issueFieldsReady, normaliseDetectedIssueTypeName } = JV;
 
   function detectDeadLinkPage() {
     const title = normaliseText(document.title || '').toLowerCase();
@@ -160,7 +160,7 @@
       const livePresent = fieldPresent(settings.liveDateSelector, '#customfield_16801-val');
       const issueTypeName = detectIssueTypeName();
       const aemPresent = fieldPresent(settings.aemPagePathSelector, '#customfield_14002-val');
-      const aemRequired = !isAemOptionalIssueType(issueTypeName, settings);
+      const aemRequired = false;
       const fieldsReady = issueFieldsReady(
         settings,
         { duePresent, livePresent, aemPresent, aemRequired },

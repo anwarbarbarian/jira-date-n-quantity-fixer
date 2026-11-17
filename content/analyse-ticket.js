@@ -19,13 +19,11 @@
     resolveExpectedQuantity,
     formatExpectedQuantitySource,
     validateQuantity,
-    isAemOptionalIssueType,
     isQuantitySkippedIssueType,
-    usesFixedQuantityWithoutAem,
-    fixedQuantityForAemOptionalIssue
+    isDueDateSkippedIssueType
   } = JV;
 
-  function dateValidationContext(settings, duePresent, livePresent, historyState = {}) {
+  function dateValidationContext(settings, duePresent, livePresent, historyState = {}, issueTypeState = {}) {
     return {
       duePresent,
       livePresent,
@@ -33,6 +31,8 @@
       skipDueValidationWhenMissing: settings.skipDueDateValidationWhenMissing !== false,
       skipLiveDateValidationWhenMissing: settings.skipLiveDateValidationWhenMissing !== false,
       skipDueRuleWhenPublishTimePresent: settings.skipDueDateRuleWhenPublishTimePresent !== false,
+      skipDueRuleForIssueType: issueTypeState.skipDueRuleForIssueType === true,
+      issueTypeName: issueTypeState.issueTypeName || '',
       historyLiveDate: historyState.liveDate || null,
       liveDateFromHistory: historyState.fromHistory === true,
       historyLiveDateNote: historyState.note || ''
@@ -100,8 +100,13 @@
     };
 
     const dueFieldNotes = [];
+    const issueTypeName = Content.detectIssueTypeName();
+    const skipDueRuleForIssueType = isDueDateSkippedIssueType(issueTypeName, settings);
     const publishTimeOnIssue = isAemPagePublishTimePresent(settings);
-    const mayUseHistoryLiveDate = settings.useLiveDateFromStatusHistory !== false && !publishTimeOnIssue;
+    const mayUseHistoryLiveDate = settings.useLiveDateFromStatusHistory !== false
+      && !publishTimeOnIssue
+      && !skipDueRuleForIssueType;
+    const issueTypeValidationState = { skipDueRuleForIssueType, issueTypeName };
 
     let dueUpdate;
     let dueUpdateHandledFromHistoryEdit = false;
@@ -183,7 +188,7 @@
       liveDate: liveDateSource === 'history' ? liveDate : null,
       fromHistory: liveDateSource === 'history',
       note: liveField.note || ''
-    });
+    }, issueTypeValidationState);
     let dateValidation = resolveDateValidation(
       dueDate,
       liveDate,
@@ -197,6 +202,7 @@
       autoUpdateDueDateOnlyWhenTooEarly: settings.autoUpdateDueDateOnlyWhenTooEarly !== false,
       publishTimePresent: dateContext.publishTimePresent,
       skipDueRuleWhenPublishTimePresent: dateContext.skipDueRuleWhenPublishTimePresent,
+      skipDueRuleForIssueType: dateContext.skipDueRuleForIssueType,
       liveDateFromHistory: dateContext.liveDateFromHistory
     };
 
@@ -267,7 +273,7 @@
           liveDate: dateContext.liveDateFromHistory ? liveDate : null,
           fromHistory: dateContext.liveDateFromHistory,
           note: liveField.note || dateContext.historyLiveDateNote || ''
-        });
+        }, issueTypeValidationState);
         dateValidation = resolveDateValidation(
           dueDate,
           liveDate,
@@ -284,7 +290,7 @@
           settings.dueDateSelector
         );
         dueDate = parseDate(dueField.value, settings.numericDateOrder);
-        dateContext = dateValidationContext(settings, duePresent, livePresent);
+        dateContext = dateValidationContext(settings, duePresent, livePresent, {}, issueTypeValidationState);
         dateValidation = resolveDateValidation(
           dueDate,
           liveDate,
@@ -336,43 +342,30 @@
       };
     }
 
-    const issueTypeName = Content.detectIssueTypeName();
     const issueLabels = Content.detectIssueLabels(settings);
+    const aemFieldPresent = fieldPresent(settings.aemPagePathSelector, '#customfield_14002-val');
     const skipQuantityForIssueType = isQuantitySkippedIssueType(issueTypeName, settings);
-    const fixedQuantityWhenAemMissing = usesFixedQuantityWithoutAem(issueTypeName, settings);
+    const skipQuantityMissingAemField = !skipQuantityForIssueType && !aemFieldPresent;
+    const skipQuantity = skipQuantityForIssueType || skipQuantityMissingAemField;
     let pagePathField;
     let expectedQuantity;
     let aemPathLineCount = 0;
     let quantityLabelBonus = 0;
     let matchedQuantityLabels = [];
-    let quantityUsesFixedIssueTypeRule = false;
-    if (skipQuantityForIssueType) {
+    const quantityUsesFixedIssueTypeRule = false;
+
+    if (skipQuantity) {
       pagePathField = {
         lines: [],
         rawText: '',
-        note: `Issue type “${issueTypeName}”: AEM Page Path and Quantity validation were not applied.`
+        note: skipQuantityForIssueType
+          ? `Issue type “${issueTypeName}”: AEM Page Path and Quantity validation were not applied.`
+          : 'AEM Page Path field is not on the issue view — Quantity validation and update were not applied.'
       };
       expectedQuantity = null;
-    } else if (fixedQuantityWhenAemMissing) {
-      const aemFieldPresent = fieldPresent(settings.aemPagePathSelector, '#customfield_14002-val');
-      if (aemFieldPresent) {
-        pagePathField = await Content.findAemPagePaths(settings);
-        aemPathLineCount = pagePathField.lines.length;
-      } else {
-        quantityUsesFixedIssueTypeRule = true;
-        expectedQuantity = fixedQuantityForAemOptionalIssue(settings);
-        pagePathField = {
-          lines: [],
-          rawText: '',
-          note: `Issue type “${issueTypeName}” has no AEM Page Path field; expected Quantity is ${expectedQuantity}.`
-        };
-      }
     } else {
       pagePathField = await Content.findAemPagePaths(settings);
       aemPathLineCount = pagePathField.lines.length;
-    }
-
-    if (!skipQuantityForIssueType && !quantityUsesFixedIssueTypeRule) {
       const resolved = resolveExpectedQuantity(
         aemPathLineCount,
         issueLabels,
@@ -397,10 +390,12 @@
     let quantityValidation;
     let quantityUpdate;
 
-    if (skipQuantityForIssueType) {
+    if (skipQuantity) {
       quantityValidation = {
         status: 'SKIPPED',
-        message: `Quantity rule was skipped for issue type “${issueTypeName}”.`
+        message: skipQuantityForIssueType
+          ? `Quantity rule was skipped for issue type “${issueTypeName}”.`
+          : 'Quantity rule was skipped because the AEM Page Path field is not on the issue view.'
       };
       quantityUpdate = {
         attempted: false,
@@ -409,7 +404,9 @@
         targetQuantity: null,
         submittedValue: '',
         verifiedQuantity: quantity,
-        message: 'Automatic Quantity update was not attempted because Quantity validation is disabled for this issue type.'
+        message: skipQuantityForIssueType
+          ? 'Automatic Quantity update was not attempted because Quantity validation is disabled for this issue type.'
+          : 'Automatic Quantity update was not attempted because the AEM Page Path field is not on the issue view.'
       };
     } else {
       quantityValidation = validateQuantity(quantity, expectedQuantity, quantityValidationContext);
@@ -429,13 +426,11 @@
         submittedValue: '',
         verifiedQuantity: quantity,
         message: quantityValidation.status === 'PASS'
-          ? quantityUsesFixedIssueTypeRule
-            ? `Quantity already matches the fixed value ${expectedQuantity} for issue type “${issueTypeName}”.`
-            : `Quantity already matches expected ${expectedQuantity} (${formatExpectedQuantitySource(
-              aemPathLineCount,
-              quantityLabelBonus,
-              matchedQuantityLabels
-            )}).`
+          ? `Quantity already matches expected ${expectedQuantity} (${formatExpectedQuantitySource(
+            aemPathLineCount,
+            quantityLabelBonus,
+            matchedQuantityLabels
+          )}).`
           : expectedQuantity === 0
             ? `Automatic Quantity update was not attempted because no AEM Page Path lines were found. ${pagePathField.note || ''}`.trim()
             : settings.autoUpdateQuantity
@@ -486,8 +481,9 @@
       pageTitle: document.title,
       detectedIssueKey: Content.detectIssueKey(),
       issueTypeName,
+      dueDateValidationSkipped: skipDueRuleForIssueType,
       quantityUsesFixedIssueTypeRule,
-      quantityValidationSkipped: skipQuantityForIssueType,
+      quantityValidationSkipped: skipQuantity,
       originalDueDateRaw,
       originalDueDateIso: originalDueDate ? formatIsoDate(originalDueDate) : '',
       dueDateRaw: dueField.value,
@@ -536,16 +532,17 @@
 
   function buildErrorResult(errorCode, errorMessage, settings = {}) {
     const issueTypeName = Content.detectIssueTypeName();
-    const skipQuantity = isQuantitySkippedIssueType(issueTypeName, settings);
+    const skipDueRule = isDueDateSkippedIssueType(issueTypeName, settings);
     const aemFieldPresent = fieldPresent(settings.aemPagePathSelector, '#customfield_14002-val');
-    const quantityUsesFixedIssueTypeRule = usesFixedQuantityWithoutAem(issueTypeName, settings)
-      && !aemFieldPresent;
+    const skipQuantityForIssueType = isQuantitySkippedIssueType(issueTypeName, settings);
+    const skipQuantity = skipQuantityForIssueType || !aemFieldPresent;
     return {
       pageTitle: document.title,
       detectedIssueKey: Content.detectIssueKey(),
       issueTypeName,
-      quantityUsesFixedIssueTypeRule,
-      quantityValidationSkipped: isQuantitySkippedIssueType(issueTypeName, settings),
+      dueDateValidationSkipped: skipDueRule,
+      quantityUsesFixedIssueTypeRule: false,
+      quantityValidationSkipped: skipQuantity,
       originalDueDateRaw: '',
       originalDueDateIso: '',
       dueDateRaw: '',
@@ -559,15 +556,19 @@
       liveUpdateTargetIso: '',
       liveUpdateSubmittedValue: '',
       liveUpdateMessage: '',
-      dateStatus: 'ERROR',
-      dateMessage: errorMessage,
+      dateStatus: skipDueRule ? 'SKIPPED' : 'ERROR',
+      dateMessage: skipDueRule
+        ? JV.dueRuleSkippedForIssueTypeMessage(issueTypeName)
+        : errorMessage,
       comparisonRule: '',
       dueUpdateAttempted: false,
       dueUpdateSuccess: false,
-      dueUpdateStatus: 'NOT_ATTEMPTED',
+      dueUpdateStatus: skipDueRule ? 'NOT_APPLICABLE' : 'NOT_ATTEMPTED',
       dueUpdateTargetIso: '',
       dueUpdateSubmittedValue: '',
-      dueUpdateMessage: '',
+      dueUpdateMessage: skipDueRule
+        ? JV.dueRuleSkippedForIssueTypeMessage(issueTypeName)
+        : '',
       issueLabels: Content.detectIssueLabels(settings),
       aemPagePathCount: 0,
       aemPagePathLines: [],
@@ -579,7 +580,9 @@
       quantity: null,
       quantityStatus: skipQuantity ? 'SKIPPED' : 'ERROR',
       quantityMessage: skipQuantity
-        ? `Quantity rule was skipped for issue type “${issueTypeName}”.`
+        ? (skipQuantityForIssueType
+          ? `Quantity rule was skipped for issue type “${issueTypeName}”.`
+          : 'Quantity rule was skipped because the AEM Page Path field is not on the issue view.')
         : errorMessage,
       quantityUpdateAttempted: false,
       quantityUpdateSuccess: false,
@@ -587,7 +590,9 @@
       quantityUpdateTarget: null,
       quantityUpdateSubmittedValue: '',
       quantityUpdateMessage: skipQuantity
-        ? 'Automatic Quantity update was not attempted because Quantity validation is disabled for this issue type.'
+        ? (skipQuantityForIssueType
+          ? 'Automatic Quantity update was not attempted because Quantity validation is disabled for this issue type.'
+          : 'Automatic Quantity update was not attempted because the AEM Page Path field is not on the issue view.')
         : '',
       fieldExtractionNotes: '',
       errorCode,

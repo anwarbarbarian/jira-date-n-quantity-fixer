@@ -99,7 +99,7 @@ test('buildErrorResult marks Quantity SKIPPED for PDP when readiness fails', () 
   const sandbox = loadExtensionScripts();
   const content = sandbox.globalThis.JiraValidatorContent;
   const { sanitiseSettings } = sandbox.globalThis.JiraValidator;
-  const settings = sanitiseSettings({ settingsVersion: 21 });
+  const settings = sanitiseSettings({ settingsVersion: 22 });
 
   sandbox.document.body.innerHTML = `
     <span id="type-val" class="value">
@@ -113,7 +113,9 @@ test('buildErrorResult marks Quantity SKIPPED for PDP when readiness fails', () 
   assert.equal(result.quantityStatus, 'SKIPPED');
   assert.equal(result.quantityValidationSkipped, true);
   assert.equal(result.quantityUpdateStatus, 'NOT_APPLICABLE');
-  assert.equal(result.dateStatus, 'ERROR');
+  assert.equal(result.dateStatus, 'SKIPPED');
+  assert.equal(result.dueDateValidationSkipped, true);
+  assert.equal(result.dueUpdateStatus, 'NOT_APPLICABLE');
 });
 
 test('detectIssueLabels reads lozenge labels from wrap-labels markup', () => {
@@ -130,22 +132,25 @@ test('detectIssueLabels reads lozenge labels from wrap-labels markup', () => {
   assert.deepEqual([...labels].sort(), ['bhavana.s', 'gnb']);
 });
 
-test('Static Page uses fixed Quantity only when AEM Page Path field is absent', () => {
+test('Static Page skips Quantity when AEM Page Path field is absent', () => {
   const sandbox = loadExtensionScripts();
   const content = sandbox.globalThis.JiraValidatorContent;
   const { sanitiseSettings } = sandbox.globalThis.JiraValidator;
-  const settings = sanitiseSettings({ settingsVersion: 21 });
+  const settings = sanitiseSettings({ settingsVersion: 22 });
 
   sandbox.document.body.innerHTML = `
     <span id="type-val" class="value">Static Page WSC Production</span>
   `;
   const withoutAem = content.buildErrorResult('PAGE_NOT_READY', 'Not ready.', settings);
-  assert.equal(withoutAem.quantityUsesFixedIssueTypeRule, true);
+  assert.equal(withoutAem.quantityValidationSkipped, true);
+  assert.equal(withoutAem.quantityStatus, 'SKIPPED');
+  assert.equal(withoutAem.quantityUsesFixedIssueTypeRule, false);
 
   sandbox.document.body.innerHTML = `
     <span id="type-val" class="value">Static Page WSC Production</span>
     <div id="customfield_14002-val"><div class="flooded">/content/site/home</div></div>
   `;
   const withAem = content.buildErrorResult('PAGE_NOT_READY', 'Not ready.', settings);
+  assert.equal(withAem.quantityValidationSkipped, false);
   assert.equal(withAem.quantityUsesFixedIssueTypeRule, false);
 });
