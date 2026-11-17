@@ -2,49 +2,69 @@
 
 Chrome Manifest V3 extension that processes Samsung Jira tickets sequentially through the authenticated web interface. It does not use Jira REST APIs, external APIs, or AI.
 
-## Version 1.10.0 Quantity replacement fix
+Current extension version: **1.0.2** (see `manifest.json`).
 
-- Existing non-empty Quantity values are explicitly cleared and replaced with the AEM Page Path count.
-- Only an input inside Jira's active Edit Issue dialog/form is treated as editable Quantity.
-- The extension submits the edit using the normal Update control and falls back to `form.requestSubmit()` when Jira ignores the synthetic click.
-- Save verification never treats the still-open edit input as a persisted value.
-- The verified persisted Quantity takes precedence over temporarily stale issue-view markup.
-- The Results **Quantity** column shows the final verified saved value, for example `3 · UPDATED`.
+## How you run it
 
-## Version 1.10.0 behavior
+1. Click the extension icon. Each click opens a **dashboard** tab (`dashboard.html`); there is no browser action popup.
+2. Paste ticket keys or browse URLs, adjust **Validation settings** if needed, then **Start validation**.
+3. The ticket list is saved while you edit it and is only cleared when you click **Clear** (not when a run starts).
+4. **Stop** ends the queue; **Export CSV** downloads detailed results.
 
-For each ticket, the extension performs two independent validations.
+Sign in to `https://jira.secext.samsung.net/` before starting. The extension opens each issue in a tab and automates the same UI actions you would use manually.
 
-### 1. Due date validation
+## What it validates
 
-1. Reads **Live Date** from `#customfield_16801-val time`.
+For each ticket, Due date and Quantity are handled independently. Either check can **PASS**, **PASS · UPDATED**, **FAIL**, **ERROR**, or **SKIPPED** depending on fields, issue type, and settings.
+
+### 1. Due date (Live Date + 2 calendar days)
+
+1. Reads **Live Date** from the issue view (`#customfield_16801-val time` by default).
 2. Reads **Due** from `#due-date time`.
-3. Requires **Due >= Live Date + 2 calendar days**.
-4. When the value is incorrect, it uses Jira inline editing and the **Edit Issue** fallback to update and verify Due.
+3. Applies the rule **Due ≥ Live Date + 2 calendar days** (comparison uses calendar days in UTC).
+4. When auto-update is enabled and the rule fails (typically Due is too early), the extension updates Due via inline editing and, when needed, the **Edit Issue** dialog, then verifies the saved value.
+5. Optional setting: only auto-update when Due is **before** Live + 2 days; later Due dates are left unchanged.
 
-### 2. AEM Page Path and Quantity validation
+**Live Date from issue history (optional, on by default):** if Live Date is missing or unreadable on the view, the extension can open **History**, find the **READY FOR LIVE → LIVE** status change, and use that timestamp as Live Date for validation. When **Write inferred Live Date** is enabled, it can set Live Date on the issue (including a combined **Edit Issue** update of Live Date and Due) before correcting Due.
 
-1. Reads only the verbose AEM Page Path content from:
+**When Due validation is skipped (no auto-update):**
 
-```css
-#customfield_14002-val .twixi-wrap.verbose .flooded
-```
+| Condition | Result |
+|-----------|--------|
+| Issue type is in the default skip list (**PDP Publishing Request**) | SKIPPED for Due rule and Due auto-update |
+| **AEM Page Publish Time** is present on the issue (scheduled tickets) | SKIPPED when *Skip Due date rule when AEM Page Publish Time is on the issue* is enabled |
+| Due or Live Date field missing from the issue view | SKIPPED when the corresponding “skip when missing” options are enabled |
+| Auto-update Due disabled in settings | Validation may still run; correction is not attempted |
 
-2. Converts `<br>` elements and block boundaries into line breaks.
-3. Counts non-empty lines only.
-4. Ignores Jira's duplicate concise rendering, so each page path is counted once.
-5. Reads Quantity from the issue view using `#customfield_13618-val` when available.
-6. If Quantity is empty, unreadable, or different from the AEM Page Path line count, it opens **Edit Issue** and updates:
+Issue type names are matched after normalising Jira’s display text (for example long `img[title]` descriptions map to **PDP Publishing Request**).
 
-```css
-#customfield_13618
-```
+### 2. AEM Page Path and Quantity
 
-7. Submits Jira's Update/Save control and verifies the persisted Quantity. If the issue view does not expose Quantity, the extension reopens Edit Issue and verifies the saved input value there.
+1. Requires the **AEM Page Path** field on the issue view (`#customfield_14002-val`). If that field is **not** on the screen, **Quantity validation and auto-update are skipped** for all issue types (the extension does not substitute a fixed Quantity).
+2. Reads verbose AEM content from the configured selector (default: `#customfield_14002-val .twixi-wrap .flooded`).
+3. Optionally expands collapsed AEM Page Path before counting.
+4. Counts **non-empty lines** only (each path once; duplicate concise/verbose renderings are not double-counted).
+5. Adds label bonuses before comparison (default: **`gnb` label → +1** to the expected count).
+6. Reads Quantity from the issue view (`#customfield_13618-val`) when visible.
+7. If Quantity is empty, wrong, or unreadable on the view, it opens **Edit Issue**, sets `#customfield_13618`, submits **Update**, and verifies the persisted value (reopening Edit Issue when the view does not refresh).
+
+**When Quantity is skipped:**
+
+| Condition | Result |
+|-----------|--------|
+| Issue type **PDP Publishing Request** (default) | SKIPPED — AEM and Quantity rules not applied |
+| AEM Page Path field not on the issue view | SKIPPED — no validation or auto-update |
+
+For other issue types (including **Static Page WSC Production**), Quantity still depends on AEM Page Path being present; missing AEM means **SKIPPED**, not a default Quantity of 1.
+
+### Quantity update behaviour
+
+- Existing non-empty Quantity values are cleared and replaced with the calculated AEM line count (plus label bonus).
+- Only an input inside Jira’s active **Edit Issue** dialog is treated as the editable Quantity field.
+- Save uses the normal **Update** control, with `form.requestSubmit()` and related fallbacks when Jira ignores synthetic clicks.
+- Verified persisted Quantity takes precedence over stale issue-view markup. Results show values like `3 · UPDATED`.
 
 ## Counting example
-
-Given:
 
 ```html
 <div id="customfield_14002-val">
@@ -58,79 +78,79 @@ Given:
 </div>
 ```
 
-The calculated Quantity is `3`.
+Expected Quantity is **3** (plus any configured label bonus).
 
-- Existing Quantity `3`: **3 · PASS**
-- Existing Quantity `2`: Jira is updated to `3`, then Results shows **3 · UPDATED**
-- Quantity cannot be saved: Results shows the current and expected values with **FAIL**
-- AEM Page Path cannot be read: Results shows **ERROR**
+- Quantity already `3`: **3 · PASS**
+- Quantity `2`: corrected to `3`, then **3 · UPDATED**
+- Update fails: **&lt;current&gt; / &lt;expected&gt; · FAIL**
+- AEM lines cannot be read: **ERROR**
+- AEM field absent or PDP issue type: **SKIPPED**
 
-## Results table
+## Results table and CSV
 
-The Results table contains:
+**Columns:** Ticket link, Due, Live Date, Date status, Quantity status.
 
-- **Ticket**: Jira issue link.
-- **Due**: final Due date.
-- **Live Date**: extracted Live Date.
-- **Date**: PASS, PASS · UPDATED, FAIL, or ERROR.
-- **Quantity**:
-  - `<count> · PASS` when Quantity already matches the AEM Page Path count.
-  - `<count> · UPDATED` when Jira was corrected and verified.
-  - `<current> / <expected> · FAIL` when correction fails.
-  - `ERROR` when the AEM Page Path count cannot be determined.
+CSV export includes date fields, AEM path lines, original/final Quantity, update status and messages, issue labels, errors, and processing timestamp.
 
-CSV export includes all date fields, AEM Page Path lines, original/final Quantity values, update status, update messages, errors, and processing timestamp.
+## Page readiness and stability
 
-## Default selectors
+The extension does not edit fields as soon as the tab fires `complete`. For each ticket it:
 
-- Due view: `#due-date time`
-- Live Date view: `#customfield_16801-val time`
-- AEM Page Path verbose content: `#customfield_14002-val .twixi-wrap.verbose .flooded`
-- Quantity issue view: `#customfield_13618-val`
-- Quantity Edit Issue input: `#customfield_13618`
+1. Confirms the URL is the requested `/browse/<ticket>`.
+2. Waits for stable DOM samples and the Jira issue shell (Due/Live optional unless you require them in settings).
+3. Waits for AJS/JIRA to initialise before clicking editable controls.
+4. Uses a short quiet period so Jira does not replace field DOM mid-edit.
+5. Limits **Edit Issue** detection to real issue-operation controls and avoids dead-link navigation side effects.
+6. Detects Jira’s **dead link** page and retries once on the canonical URL.
+7. Re-checks readiness after saving Due and before opening Edit Issue for Quantity.
+8. Fails safely with an error instead of clicking when the page is incomplete or navigated away.
 
-These selectors can be adjusted in **Validation settings** without changing source code.
+Quantity updates always go through **Edit Issue** rather than arbitrary page-level inputs, to avoid stale or hidden fields during render.
 
+## Default selectors and issue-type lists
 
-## Race-condition and Jira dead-link fix
+| Purpose | Default |
+|---------|---------|
+| Due (view) | `#due-date time` |
+| Live Date (view) | `#customfield_16801-val time` |
+| AEM Page Publish Time | `#customfield_14005-val` |
+| AEM Page Path (verbose) | `#customfield_14002-val .twixi-wrap .flooded` |
+| Quantity (view) | `#customfield_13618-val` |
+| Quantity (Edit Issue) | `#customfield_13618` |
+| Issue labels | `#wrap-labels .labels a.lozenge` |
 
-Version 1.10.0 does not edit any field immediately after Chrome reports that the tab is complete. It now:
-
-1. Verifies that the tab is on the exact requested `/browse/<ticket>` URL.
-2. Waits for three stable page samples, the Jira issue shell, Due, Live Date, and AEM Page Path fields.
-3. Confirms that Jira's AJS/JIRA application code is initialized before clicking editable controls.
-4. Waits an additional quiet period so Jira cannot replace the field DOM during the first edit.
-5. Restricts Edit Issue detection to Jira's actual issue-operation controls.
-6. Prevents an Edit Issue anchor's default navigation while still allowing Jira's JavaScript dialog handler to run.
-7. Detects the exact `Oops, you've found a dead link` page and retries the ticket once using its canonical URL.
-8. Revalidates page readiness after saving Due and before opening Edit Issue for Quantity.
-9. Stops safely with an error instead of clicking fields when the issue page is incomplete or has navigated elsewhere.
-
-The extension intentionally opens Quantity through Edit Issue rather than using an arbitrary page-level input. This avoids selecting stale or hidden fields while Jira is still rendering.
+View selectors and most behaviour flags are editable in the dashboard **Validation settings**. Issue-type skip lists (`quantitySkippedIssueTypes`, `dueDateSkippedIssueTypes`, `aemOptionalIssueTypes`) are defined in `lib/settings-utils.js` and migrate with stored settings version **22**; change defaults there if your Jira project uses different type names.
 
 ## Installation or upgrade
 
-1. Extract the ZIP into a permanent folder.
-2. Open `chrome://extensions`.
-3. Enable **Developer mode**.
-4. For a new installation, click **Load unpacked** and select the extracted `jira-due-live-validator` folder.
-5. For an existing installation, replace the old folder and click **Reload**.
-6. Confirm that the extension card shows version `1.10.0`.
-7. Sign in to `https://jira.secext.samsung.net/` before running validation.
-8. Run the ticket list again. Older stored results are cleared during upgrade.
+1. Extract the release ZIP into a permanent folder (do not load the ZIP directly in Chrome).
+2. Open `chrome://extensions`, enable **Developer mode**.
+3. **Load unpacked** and select the project folder, or **Reload** after replacing an existing copy.
+4. Confirm the extension card shows version **1.0.2**.
+5. Sign in to Jira, then open the dashboard from the toolbar icon and run your list again.
 
-Do not load the ZIP directly; extract it first.
+On extension **update**, stored validation results are cleared so old output is not mistaken for a new run.
 
-## Permissions and update failures
+## Permissions and limits
 
-Automatic updates require the logged-in Jira user to have permission to edit the issue and the applicable fields. Jira screen configuration, workflow restrictions, field validators, and permissions are not bypassed.
+Automatic updates require the logged-in user to have permission to edit the issue and the relevant fields. Jira workflows, validators, screen configuration, and permissions are not bypassed.
 
-When Quantity cannot be updated, the CSV contains the current value, calculated target, submitted value, Jira update status, update message, and any detected error.
+When an update fails, the CSV and result messages include current values, targets, submission details, and Jira error text where available.
+
+## Development
+
+```bash
+npm install
+npm test
+npm run validate
+```
+
+Tests use Node’s built-in test runner and `jsdom` for DOM-oriented helpers.
 
 ## Security
 
-- Data remains in `chrome.storage.local`.
-- Host access is restricted to `https://jira.secext.samsung.net/*`.
+- State and results stay in `chrome.storage.local`.
+- Host access is limited to `https://jira.secext.samsung.net/*`.
 - Credentials are not read or stored.
 - No data is sent outside the browser.
-- Distribute the extension through your organization's approved extension process.
+- Distribute through your organisation’s approved extension process.
