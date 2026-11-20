@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>JIRA Due Date and Quantity Fixer</title>
+  <title>Mark Tickets Complete</title>
   <link rel="stylesheet" href="dashboard.css">
 </head>
 <body>
   <main>
     <header>
       <div>
-        <h1>JIRA Due Date and Quantity Fixer</h1>
+        <h1>Mark Tickets Complete</h1>
         <p>Validate Due dates and synchronize Quantity with AEM Page Path lines.</p>
       </div>
       <span id="runBadge" class="badge idle">Idle</span>
@@ -119,6 +119,26 @@
         <label class="checkbox-label wide">
           <input id="autoUpdateQuantity" type="checkbox" checked>
           Automatically update Quantity to the AEM Page Path line count when validation fails
+        </label>
+        <label class="checkbox-label wide">
+          <input id="autoUpdateResolutionOnSuccess" type="checkbox" checked>
+          Set Resolution to Completed (Edit Issue) when Due and Quantity validation fully pass
+        </label>
+        <label class="checkbox-label wide">
+          <input id="autoUpdatePendingReasonOnSuccess" type="checkbox" checked>
+          Set Pending Reason to “This ticket is not pending” in the same Edit Issue save
+        </label>
+        <label class="wide">
+          Resolution select CSS selector <span class="optional">(Edit Issue)</span>
+          <input id="resolutionSelectSelector" type="text" value="#resolution" placeholder="#resolution">
+        </label>
+        <label class="wide">
+          Resolution view CSS selector
+          <input id="resolutionViewSelector" type="text" value="#resolution-val" placeholder="#resolution-val">
+        </label>
+        <label>
+          Completed resolution option value
+          <input id="resolutionCompletedValue" type="text" value="10500">
         </label>
         <div class="hint wide">Default label rule: the <code>gnb</code> label adds +1 to the AEM path count before Quantity validation and update.</div>
       </div>

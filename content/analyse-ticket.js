@@ -15,12 +15,14 @@
     shouldAttemptDueDateUpdate,
     fieldPresent,
     isAemPagePublishTimePresent,
+    SCHEDULED_PUBLISH_TIME_CLOSURE_MESSAGE,
     parseQuantity,
     resolveExpectedQuantity,
     formatExpectedQuantitySource,
     validateQuantity,
     isQuantitySkippedIssueType,
-    isDueDateSkippedIssueType
+    isDueDateSkippedIssueType,
+    isTicketValidationSuccessful
   } = JV;
 
   function dateValidationContext(settings, duePresent, livePresent, historyState = {}, issueTypeState = {}) {
@@ -477,6 +479,80 @@
       quantityField.note ? `${settings.quantityLabel}: ${quantityField.note}` : ''
     ].filter(Boolean).join(' | ');
 
+    const validationSnapshot = {
+      errorCode: '',
+      dateStatus: dateValidation.status,
+      quantityStatus: quantityValidation.status,
+      liveUpdateAttempted: liveUpdate.attempted,
+      liveUpdateSuccess: liveUpdate.success,
+      dueUpdateAttempted: dueUpdate.attempted,
+      dueUpdateSuccess: dueUpdate.success,
+      quantityUpdateAttempted: quantityUpdate.attempted,
+      quantityUpdateSuccess: quantityUpdate.success
+    };
+
+    let resolutionUpdate;
+    if (settings.autoUpdateResolutionOnSuccess === false) {
+      resolutionUpdate = {
+        attempted: false,
+        success: false,
+        status: 'NOT_APPLICABLE',
+        targetValue: '',
+        submittedValue: '',
+        verifiedResolution: Content.readResolutionOnView?.(settings) || '',
+        message: 'Automatic Resolution update is disabled in settings.'
+      };
+    } else if (!isTicketValidationSuccessful(validationSnapshot)) {
+      resolutionUpdate = {
+        attempted: false,
+        success: false,
+        status: 'NOT_ATTEMPTED',
+        targetValue: String(settings.resolutionCompletedValue || '10500'),
+        submittedValue: '',
+        verifiedResolution: Content.readResolutionOnView?.(settings) || '',
+        message: 'Resolution was not updated because Due or Quantity validation did not fully pass or an update failed.'
+      };
+    } else if (isAemPagePublishTimePresent(settings)) {
+      resolutionUpdate = {
+        attempted: false,
+        success: false,
+        status: 'NOT_APPLICABLE',
+        targetValue: '',
+        submittedValue: '',
+        verifiedResolution: Content.readResolutionOnView?.(settings) || '',
+        message: SCHEDULED_PUBLISH_TIME_CLOSURE_MESSAGE,
+        pendingReasonUpdateAttempted: false,
+        pendingReasonUpdateSuccess: false,
+        pendingReasonUpdateStatus: 'NOT_APPLICABLE',
+        pendingReasonUpdateSubmittedValue: '',
+        verifiedPendingReason: Content.readPendingReasonOnView?.(settings) || '',
+        pendingReasonUpdateMessage: SCHEDULED_PUBLISH_TIME_CLOSURE_MESSAGE
+      };
+    } else {
+      const resolutionReadiness = await Content.waitForPage(
+        ticket,
+        12000,
+        { requireIssueFields: true, settings }
+      );
+      if (!resolutionReadiness.ready) {
+        resolutionUpdate = {
+          attempted: false,
+          success: false,
+          status: 'NOT_ATTEMPTED',
+          targetValue: String(settings.resolutionCompletedValue || '10500'),
+          submittedValue: '',
+          verifiedResolution: Content.readResolutionOnView?.(settings) || '',
+          message: `Resolution update was skipped because Jira was not ready: ${resolutionReadiness.message}`
+        };
+      } else {
+        resolutionUpdate = await Content.updateResolutionViaUi(settings, ticket);
+      }
+    }
+
+    const resolutionRaw = resolutionUpdate.verifiedResolution
+      || Content.readResolutionOnView?.(settings)
+      || '';
+
     return {
       pageTitle: document.title,
       detectedIssueKey: Content.detectIssueKey(),
@@ -524,6 +600,19 @@
       quantityUpdateTarget: quantityUpdate.targetQuantity,
       quantityUpdateSubmittedValue: quantityUpdate.submittedValue,
       quantityUpdateMessage: quantityUpdate.message,
+      resolutionRaw,
+      resolutionUpdateAttempted: resolutionUpdate.attempted,
+      resolutionUpdateSuccess: resolutionUpdate.success,
+      resolutionUpdateStatus: resolutionUpdate.status,
+      resolutionUpdateTarget: resolutionUpdate.targetValue,
+      resolutionUpdateSubmittedValue: resolutionUpdate.submittedValue,
+      resolutionUpdateMessage: resolutionUpdate.message,
+      pendingReasonRaw: resolutionUpdate.verifiedPendingReason || '',
+      pendingReasonUpdateAttempted: resolutionUpdate.pendingReasonUpdateAttempted === true,
+      pendingReasonUpdateSuccess: resolutionUpdate.pendingReasonUpdateSuccess === true,
+      pendingReasonUpdateStatus: resolutionUpdate.pendingReasonUpdateStatus || 'NOT_APPLICABLE',
+      pendingReasonUpdateSubmittedValue: resolutionUpdate.pendingReasonUpdateSubmittedValue || '',
+      pendingReasonUpdateMessage: resolutionUpdate.pendingReasonUpdateMessage || '',
       fieldExtractionNotes: fieldNotes,
       errorCode: '',
       errorMessage: ''
@@ -594,6 +683,19 @@
           ? 'Automatic Quantity update was not attempted because Quantity validation is disabled for this issue type.'
           : 'Automatic Quantity update was not attempted because the AEM Page Path field is not on the issue view.')
         : '',
+      resolutionRaw: '',
+      resolutionUpdateAttempted: false,
+      resolutionUpdateSuccess: false,
+      resolutionUpdateStatus: 'NOT_ATTEMPTED',
+      resolutionUpdateTarget: '',
+      resolutionUpdateSubmittedValue: '',
+      resolutionUpdateMessage: 'Resolution was not updated because the ticket could not be analysed.',
+      pendingReasonRaw: '',
+      pendingReasonUpdateAttempted: false,
+      pendingReasonUpdateSuccess: false,
+      pendingReasonUpdateStatus: 'NOT_ATTEMPTED',
+      pendingReasonUpdateSubmittedValue: '',
+      pendingReasonUpdateMessage: 'Pending Reason was not updated because the ticket could not be analysed.',
       fieldExtractionNotes: '',
       errorCode,
       errorMessage

@@ -20,12 +20,14 @@ const {
   usesFixedQuantityWithoutAem,
   fixedQuantityForAemOptionalIssue,
   normaliseDetectedIssueTypeName,
-  isAemPagePublishTimePresent
+  isAemPagePublishTimePresent,
+  readAemPagePublishTimeValue,
+  isTicketValidationSuccessful
 } = require('../lib/settings-utils');
 
 test('sanitiseSettings clamps timeout and preserves supported values', () => {
   const settings = sanitiseSettings({
-    settingsVersion: 22,
+    settingsVersion: 24,
     timeoutSeconds: 999,
     numericDateOrder: 'MDY',
     dueDateSelector: '#due-date time',
@@ -66,7 +68,7 @@ test('selectorRoot returns the first selector segment', () => {
 });
 
 test('issueFieldsReady allows missing Live Date when liveDateRequiredForRun is false', () => {
-  const settings = sanitiseSettings({ settingsVersion: 22, liveDateRequiredForRun: false });
+  const settings = sanitiseSettings({ settingsVersion: 24, liveDateRequiredForRun: false });
   assert.equal(
     issueFieldsReady(settings, { duePresent: true, livePresent: false, aemPresent: true }),
     true
@@ -82,7 +84,7 @@ test('issueFieldsReady allows missing Live Date when liveDateRequiredForRun is f
 });
 
 test('issueFieldsReady requires Live Date when liveDateRequiredForRun is true', () => {
-  const settings = sanitiseSettings({ settingsVersion: 22, liveDateRequiredForRun: true });
+  const settings = sanitiseSettings({ settingsVersion: 24, liveDateRequiredForRun: true });
   assert.equal(
     issueFieldsReady(settings, { duePresent: true, livePresent: false, aemPresent: true }),
     false
@@ -94,7 +96,7 @@ test('issueFieldsReady requires Live Date when liveDateRequiredForRun is true', 
 });
 
 test('issueFieldsReady allows missing Due when dueDateRequiredForRun is false', () => {
-  const settings = sanitiseSettings({ settingsVersion: 22, dueDateRequiredForRun: false });
+  const settings = sanitiseSettings({ settingsVersion: 24, dueDateRequiredForRun: false });
   assert.equal(
     issueFieldsReady(settings, { duePresent: false, livePresent: true, aemPresent: true }),
     true
@@ -102,7 +104,7 @@ test('issueFieldsReady allows missing Due when dueDateRequiredForRun is false', 
 });
 
 test('issueFieldsReady requires Due when dueDateRequiredForRun is true', () => {
-  const settings = sanitiseSettings({ settingsVersion: 22, dueDateRequiredForRun: true });
+  const settings = sanitiseSettings({ settingsVersion: 24, dueDateRequiredForRun: true });
   assert.equal(
     issueFieldsReady(settings, { duePresent: false, livePresent: true, aemPresent: true }),
     false
@@ -165,11 +167,19 @@ test('sanitiseSettings includes default gnb quantity label bonus', () => {
   assert.equal(settings.issueLabelsSelector, '#wrap-labels .labels a.lozenge');
 });
 
-test('isAemPagePublishTimePresent detects customfield_14005-val', () => {
-  const settings = sanitiseSettings({ settingsVersion: 22 });
+test('isAemPagePublishTimePresent is true when publish time has a value', () => {
+  const settings = sanitiseSettings({ settingsVersion: 24 });
   const dom = new JSDOM('<div id="customfield_14005-val"><time>06/Oct/26</time></div>');
   global.document = dom.window.document;
+  assert.equal(readAemPagePublishTimeValue(settings), '06/Oct/26');
   assert.equal(isAemPagePublishTimePresent(settings), true);
+});
+
+test('isAemPagePublishTimePresent is false when publish time field is empty', () => {
+  const settings = sanitiseSettings({ settingsVersion: 24 });
+  const dom = new JSDOM('<div id="customfield_14005-val"></div>');
+  global.document = dom.window.document;
+  assert.equal(isAemPagePublishTimePresent(settings), false);
 });
 
 test('fieldPresent checks selector roots and full selectors', () => {
@@ -181,4 +191,47 @@ test('fieldPresent checks selector roots and full selectors', () => {
 
   assert.equal(fieldPresent('#due-date time', '#due-date'), true);
   assert.equal(fieldPresent('#missing time', '#also-missing'), false);
+});
+
+test('sanitiseSettings includes resolution auto-update defaults', () => {
+  const settings = sanitiseSettings({ settingsVersion: 24 });
+  assert.equal(settings.autoUpdateResolutionOnSuccess, true);
+  assert.equal(settings.resolutionCompletedValue, '10500');
+  assert.equal(settings.resolutionSelectSelector, '#resolution');
+  assert.equal(settings.autoUpdatePendingReasonOnSuccess, true);
+  assert.equal(settings.pendingReasonOptionValue, '20102');
+});
+
+test('isTicketValidationSuccessful allows PASS and SKIPPED without failed updates', () => {
+  assert.equal(isTicketValidationSuccessful({
+    dateStatus: 'PASS',
+    quantityStatus: 'PASS',
+    dueUpdateAttempted: false,
+    dueUpdateSuccess: false,
+    quantityUpdateAttempted: true,
+    quantityUpdateSuccess: true
+  }), true);
+  assert.equal(isTicketValidationSuccessful({
+    dateStatus: 'SKIPPED',
+    quantityStatus: 'PASS'
+  }), true);
+  assert.equal(isTicketValidationSuccessful({
+    dateStatus: 'SKIPPED',
+    quantityStatus: 'SKIPPED'
+  }), false);
+  assert.equal(isTicketValidationSuccessful({
+    dateStatus: 'FAIL',
+    quantityStatus: 'PASS'
+  }), false);
+  assert.equal(isTicketValidationSuccessful({
+    dateStatus: 'PASS',
+    quantityStatus: 'PASS',
+    quantityUpdateAttempted: true,
+    quantityUpdateSuccess: false
+  }), false);
+  assert.equal(isTicketValidationSuccessful({
+    errorCode: 'PAGE_NOT_READY',
+    dateStatus: 'ERROR',
+    quantityStatus: 'ERROR'
+  }), false);
 });

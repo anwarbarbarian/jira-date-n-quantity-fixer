@@ -1,4 +1,4 @@
-# JIRA Due Date and Quantity Fixer
+# Mark Tickets Complete
 
 Chrome Manifest V3 extension that processes Samsung Jira tickets sequentially through the authenticated web interface. It does not use Jira REST APIs, external APIs, or AI.
 

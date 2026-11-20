@@ -797,7 +797,14 @@ function formatResultStatus(result) {
     : result?.quantityStatus === 'SKIPPED'
       ? 'Quantity SKIPPED'
       : `Quantity ${result?.quantityStatus || 'ERROR'}`;
-  return `${date}; ${quantity}`;
+  const resolution = result?.resolutionUpdateStatus === 'UPDATED'
+    ? 'Resolution UPDATED'
+    : result?.resolutionUpdateStatus === 'NOT_NEEDED'
+      ? 'Resolution OK'
+      : result?.resolutionUpdateStatus === 'FAILED'
+        ? 'Resolution FAILED'
+        : '';
+  return resolution ? `${date}; ${quantity}; ${resolution}` : `${date}; ${quantity}`;
 }
 
 async function getState() {

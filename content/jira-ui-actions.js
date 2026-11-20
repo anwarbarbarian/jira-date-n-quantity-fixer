@@ -1547,6 +1547,642 @@
     }
   }
 
+  function closureUpdateBase(overrides = {}) {
+    return {
+      attempted: false,
+      success: false,
+      status: 'NOT_ATTEMPTED',
+      targetValue: '',
+      submittedValue: '',
+      verifiedResolution: '',
+      message: '',
+      pendingReasonUpdateAttempted: false,
+      pendingReasonUpdateSuccess: false,
+      pendingReasonUpdateStatus: 'NOT_APPLICABLE',
+      pendingReasonUpdateSubmittedValue: '',
+      verifiedPendingReason: '',
+      pendingReasonUpdateMessage: '',
+      ...overrides
+    };
+  }
+
+  function failedResolutionUpdate(targetValue, submittedValue, message, extra = {}) {
+    return closureUpdateBase({
+      attempted: true,
+      success: false,
+      status: 'FAILED',
+      targetValue,
+      submittedValue,
+      message,
+      pendingReasonUpdateStatus: extra.pendingReasonUpdateStatus || 'NOT_ATTEMPTED',
+      pendingReasonUpdateMessage: extra.pendingReasonUpdateMessage || '',
+      ...extra
+    });
+  }
+
+  function readResolutionOnView(settings) {
+    const selectors = [
+      settings.resolutionViewSelector,
+      '#resolution-val',
+      '#resolution .value'
+    ].filter(Boolean);
+    for (const selector of selectors) {
+      try {
+        const element = document.querySelector(selector);
+        if (element) {
+          return normaliseText(element.textContent || element.innerText || '');
+        }
+      } catch {
+        continue;
+      }
+    }
+    return '';
+  }
+
+  function resolutionMatchesLabel(viewText, targetLabel) {
+    const view = normaliseText(viewText).toLowerCase();
+    const target = normaliseText(targetLabel).toLowerCase();
+    if (!view || !target) return false;
+    return view === target || view.startsWith(`${target} `);
+  }
+
+  function readPendingReasonOnView(settings) {
+    const selectors = [
+      settings.pendingReasonViewSelector,
+      '#customfield_16802-val'
+    ].filter(Boolean);
+    for (const selector of selectors) {
+      try {
+        const element = document.querySelector(selector);
+        if (element) {
+          return normaliseText(element.textContent || element.innerText || '');
+        }
+      } catch {
+        continue;
+      }
+    }
+    return '';
+  }
+
+  function pendingReasonMatchesLabel(viewText, targetLabel) {
+    const view = normaliseText(viewText).toLowerCase();
+    const target = normaliseText(targetLabel).toLowerCase();
+    if (!target) return false;
+    if (!view) return false;
+    return view.includes(target);
+  }
+
+  function findPendingReasonFieldset(settings, mode = 'any') {
+    const selectors = [
+      settings.pendingReasonFieldsetSelector,
+      '#customfield_16802',
+      'fieldset[id="customfield_16802"]'
+    ].filter(Boolean);
+    for (const root of getSearchRoots()) {
+      for (const selector of [...new Set(selectors)]) {
+        let fieldsets = [];
+        try {
+          fieldsets = [...root.querySelectorAll(selector)];
+        } catch {
+          continue;
+        }
+        for (const fieldset of fieldsets) {
+          if (mode === 'dialog' && !isInsideEditIssueContainer(fieldset)) continue;
+          if (mode === 'view' && isInsideEditIssueContainer(fieldset)) continue;
+          return fieldset;
+        }
+      }
+    }
+    return null;
+  }
+
+  function listPendingReasonCheckboxes(fieldset, settings) {
+    if (!fieldset) return [];
+    const name = 'customfield_16802';
+    return [...fieldset.querySelectorAll(`input[name="${name}"][type="checkbox"]`)]
+      .filter((checkbox) => checkbox instanceof HTMLInputElement);
+  }
+
+  function findPendingReasonTargetCheckbox(settings, fieldset) {
+    if (!fieldset) return null;
+    const selectors = [
+      settings.pendingReasonCheckboxSelector,
+      '#customfield_16802-1',
+      `input[name="customfield_16802"][value="${settings.pendingReasonOptionValue || '20102'}"]`
+    ].filter(Boolean);
+    for (const selector of selectors) {
+      try {
+        const inside = fieldset.querySelector(selector);
+        if (inside instanceof HTMLInputElement) return inside;
+      } catch {
+        continue;
+      }
+    }
+    const targetValue = String(settings.pendingReasonOptionValue || '20102');
+    const targetLabel = normaliseText(settings.pendingReasonOptionLabel || '').toLowerCase();
+    for (const checkbox of listPendingReasonCheckboxes(fieldset, settings)) {
+      if (String(checkbox.value) === targetValue) return checkbox;
+      const label = fieldset.querySelector(`label[for="${checkbox.id}"]`);
+      const labelText = normaliseText(label?.textContent || '').toLowerCase();
+      if (targetLabel && labelText === targetLabel) return checkbox;
+    }
+    return null;
+  }
+
+  function writeCheckboxState(checkbox, checked) {
+    if (!checkbox) return false;
+    checkbox.focus();
+    if (checkbox.checked !== checked) {
+      checkbox.checked = checked;
+      checkbox.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+      checkbox.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+      checkbox.dispatchEvent(new Event('click', { bubbles: true, composed: true }));
+      if (typeof window !== 'undefined' && window.AJS?.$) {
+        try {
+          window.AJS.$(checkbox).prop('checked', checked).trigger('change');
+        } catch {
+          // DOM events above remain the fallback.
+        }
+      }
+    }
+    return checkbox.checked === checked;
+  }
+
+  function pendingReasonSatisfiedInDialog(settings, fieldset) {
+    const target = findPendingReasonTargetCheckbox(settings, fieldset);
+    if (!target) return { satisfied: false, missing: true, checkbox: null };
+    const others = listPendingReasonCheckboxes(fieldset, settings).filter((box) => box !== target);
+    const othersChecked = others.some((box) => box.checked);
+    const targetChecked = target.checked;
+    return {
+      satisfied: targetChecked && !othersChecked,
+      missing: false,
+      checkbox: target
+    };
+  }
+
+  function applyPendingReasonInDialog(settings, fieldset) {
+    const target = findPendingReasonTargetCheckbox(settings, fieldset);
+    if (!target) {
+      return {
+        success: false,
+        submittedValue: '',
+        message: 'Pending Reason target checkbox was not found in Edit Issue.'
+      };
+    }
+    for (const checkbox of listPendingReasonCheckboxes(fieldset, settings)) {
+      if (checkbox !== target && checkbox.checked && !writeCheckboxState(checkbox, false)) {
+        return {
+          success: false,
+          submittedValue: String(target.value || ''),
+          message: 'Could not clear other Pending Reason selections in Edit Issue.'
+        };
+      }
+    }
+    if (!writeCheckboxState(target, true)) {
+      return {
+        success: false,
+        submittedValue: String(target.value || ''),
+        message: 'Could not select “This ticket is not pending” in Edit Issue.'
+      };
+    }
+    return {
+      success: true,
+      submittedValue: String(target.value || ''),
+      message: `Pending Reason was set to “${settings.pendingReasonOptionLabel || 'This ticket is not pending'}”.`
+    };
+  }
+
+  async function waitForSavedPendingReason(targetLabel, settings, timeoutMs) {
+    const started = Date.now();
+    let lastObserved = '';
+    while (Date.now() - started < timeoutMs) {
+      lastObserved = readPendingReasonOnView(settings);
+      if (pendingReasonMatchesLabel(lastObserved, targetLabel)) {
+        return { success: true, verifiedPendingReason: lastObserved };
+      }
+      await sleep(TIMING.SAVE_VERIFY_POLL_MS);
+    }
+    return {
+      success: false,
+      verifiedPendingReason: lastObserved,
+      message: lastObserved
+        ? `Timed out verifying Pending Reason. Expected “${targetLabel}”, but Jira showed “${lastObserved}”.`
+        : `Timed out verifying that Jira saved Pending Reason as “${targetLabel}”.`
+    };
+  }
+
+  async function verifyPendingReasonThroughEditDialog(settings) {
+    const fieldset = findPendingReasonFieldset(settings, 'dialog');
+    if (fieldset) {
+      const state = pendingReasonSatisfiedInDialog(settings, fieldset);
+      if (!state.satisfied) {
+        return {
+          success: false,
+          verifiedPendingReason: '',
+          message: 'The Edit Issue dialog remained open after submission, so Pending Reason was not treated as persisted.'
+        };
+      }
+    }
+
+    const editControl = findEditIssueControl();
+    if (!editControl) {
+      return { success: false, verifiedPendingReason: '', message: 'Could not reopen Edit Issue to verify Pending Reason.' };
+    }
+    dispatchUserLikeClick(editControl, { preventAnchorNavigation: true });
+    const dialogFieldset = await (async () => {
+      const deadline = Date.now() + 10000;
+      while (Date.now() < deadline) {
+        const found = findPendingReasonFieldset(settings, 'dialog');
+        if (found) return found;
+        await sleep(TIMING.INPUT_POLL_MS);
+      }
+      return null;
+    })();
+    if (!dialogFieldset) {
+      return {
+        success: false,
+        verifiedPendingReason: '',
+        message: 'Edit Issue reopened, but Pending Reason was not found for verification.'
+      };
+    }
+    const state = pendingReasonSatisfiedInDialog(settings, dialogFieldset);
+    const anchor = findPendingReasonTargetCheckbox(settings, dialogFieldset) || dialogFieldset;
+    await cancelEditIssueDialog(anchor);
+    return state.satisfied
+      ? { success: true, verifiedPendingReason: settings.pendingReasonOptionLabel || '' }
+      : {
+        success: false,
+        verifiedPendingReason: '',
+        message: `Reopened Edit Issue did not show “${settings.pendingReasonOptionLabel || 'This ticket is not pending'}” as the only Pending Reason selection.`
+      };
+  }
+
+  function closureFieldsSatisfiedOnView(settings, resolutionLabel, resolutionValue) {
+    const resolutionOk = resolutionMatchesLabel(readResolutionOnView(settings), resolutionLabel);
+    if (settings.autoUpdatePendingReasonOnSuccess === false) {
+      return { resolutionOk, pendingOk: true };
+    }
+    const pendingOk = pendingReasonMatchesLabel(
+      readPendingReasonOnView(settings),
+      settings.pendingReasonOptionLabel || 'This ticket is not pending'
+    );
+    return { resolutionOk, pendingOk };
+  }
+
+  function findResolutionSelect(settings, mode = 'any') {
+    const selectors = [
+      settings.resolutionSelectSelector,
+      'select#resolution',
+      'select[name="resolution"]'
+    ].filter(Boolean);
+
+    const candidates = [];
+    for (const root of getSearchRoots()) {
+      for (const selector of [...new Set(selectors)]) {
+        let matches = [];
+        try {
+          matches = [...root.querySelectorAll(selector)];
+        } catch {
+          continue;
+        }
+        for (const candidate of matches) {
+          if (!candidates.includes(candidate)) candidates.push(candidate);
+        }
+      }
+    }
+
+    return candidates
+      .filter((candidate) => candidate instanceof HTMLSelectElement)
+      .filter((candidate) => !candidate.disabled)
+      .filter((candidate) => mode !== 'dialog' || isInsideEditIssueContainer(candidate))
+      .filter((candidate) => mode !== 'view' || !isInsideEditIssueContainer(candidate))[0] || null;
+  }
+
+  async function waitForResolutionSelect(settings, timeoutMs, mode = 'dialog') {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const select = findResolutionSelect(settings, mode);
+      if (select) return select;
+      await sleep(TIMING.INPUT_POLL_MS);
+    }
+    return null;
+  }
+
+  function writeSelectValue(select, value) {
+    const nextValue = String(value ?? '');
+    select.focus();
+    if (typeof HTMLSelectElement !== 'undefined' && select instanceof HTMLSelectElement) {
+      select.value = nextValue;
+    }
+    select.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    select.dispatchEvent(new Event('change', { bubbles: true, composed: true }));
+    if (typeof window !== 'undefined' && window.AJS?.$) {
+      try {
+        window.AJS.$(select).val(nextValue).trigger('change');
+      } catch {
+        // DOM events above remain the fallback.
+      }
+    }
+    return String(select.value || '') === nextValue;
+  }
+
+  async function waitForSavedResolution(targetValue, targetLabel, settings, timeoutMs) {
+    const started = Date.now();
+    let lastObserved = '';
+    while (Date.now() - started < timeoutMs) {
+      lastObserved = readResolutionOnView(settings);
+      if (resolutionMatchesLabel(lastObserved, targetLabel)) {
+        return { success: true, verifiedResolution: lastObserved };
+      }
+      const viewSelect = findResolutionSelect(settings, 'view');
+      if (viewSelect && String(viewSelect.value) === String(targetValue)) {
+        const label = viewSelect.selectedOptions?.[0]?.textContent || lastObserved;
+        return { success: true, verifiedResolution: normaliseText(label) || lastObserved };
+      }
+      await sleep(TIMING.SAVE_VERIFY_POLL_MS);
+    }
+    return {
+      success: false,
+      verifiedResolution: lastObserved,
+      message: lastObserved
+        ? `Timed out verifying Resolution. Expected “${targetLabel}”, but Jira still showed “${lastObserved}”.`
+        : `Timed out verifying that Jira saved Resolution as “${targetLabel}”.`
+    };
+  }
+
+  async function verifyResolutionThroughEditDialog(targetValue, targetLabel, settings) {
+    const existingSelect = findResolutionSelect(settings, 'dialog');
+    if (existingSelect) {
+      const label = normaliseText(existingSelect.selectedOptions?.[0]?.textContent || '');
+      const value = String(existingSelect.value || '');
+      const error = findQuantityEditError();
+      return {
+        success: false,
+        verifiedResolution: label || value,
+        message: error || `The Edit Issue dialog remained open after submission (Resolution ${label || value || 'empty'}).`
+      };
+    }
+
+    const editControl = findEditIssueControl();
+    if (!editControl) {
+      return { success: false, verifiedResolution: '', message: 'Could not reopen Edit Issue to verify Resolution.' };
+    }
+
+    dispatchUserLikeClick(editControl, { preventAnchorNavigation: true });
+    const select = await waitForResolutionSelect(settings, 10000, 'dialog');
+    if (!select) {
+      return { success: false, verifiedResolution: '', message: 'Edit Issue reopened, but the Resolution field was not found.' };
+    }
+
+    const label = normaliseText(select.selectedOptions?.[0]?.textContent || '');
+    const value = String(select.value || '');
+    await cancelEditIssueDialog(select);
+    const matches = value === String(targetValue) || resolutionMatchesLabel(label, targetLabel);
+    return matches
+      ? { success: true, verifiedResolution: label || targetLabel }
+      : {
+        success: false,
+        verifiedResolution: label || value,
+        message: `Reopened Edit Issue showed Resolution “${label || value || 'empty'}” instead of “${targetLabel}”.`
+      };
+  }
+
+  async function updateResolutionViaUi(settings, ticket) {
+    const targetValue = String(settings.resolutionCompletedValue || '10500');
+    const targetLabel = String(settings.resolutionCompletedLabel || 'Completed').trim();
+    const pendingLabel = String(settings.pendingReasonOptionLabel || 'This ticket is not pending').trim();
+    const pendingValue = String(settings.pendingReasonOptionValue || '20102');
+    const updatePending = settings.autoUpdatePendingReasonOnSuccess !== false;
+
+    if (isAemPagePublishTimePresent(settings)) {
+      return closureUpdateBase({
+        success: false,
+        status: 'NOT_APPLICABLE',
+        message: JV.SCHEDULED_PUBLISH_TIME_CLOSURE_MESSAGE
+          || 'Scheduled ticket (AEM Page Publish Time has a value) — Resolution and Pending Reason were not updated.',
+        pendingReasonUpdateStatus: 'NOT_APPLICABLE',
+        pendingReasonUpdateMessage: JV.SCHEDULED_PUBLISH_TIME_CLOSURE_MESSAGE
+          || 'Scheduled ticket (AEM Page Publish Time has a value) — Resolution and Pending Reason were not updated.'
+      });
+    }
+
+    const readiness = await Content.waitForPage(ticket, 15000, { requireIssueFields: true, settings });
+    if (!readiness.ready) {
+      return failedResolutionUpdate(
+        targetValue,
+        '',
+        `Jira was not ready before opening Edit Issue for Resolution. ${readiness.message}`
+      );
+    }
+
+    const viewState = closureFieldsSatisfiedOnView(settings, targetLabel, targetValue);
+    if (viewState.resolutionOk && viewState.pendingOk) {
+      return closureUpdateBase({
+        success: true,
+        status: 'NOT_NEEDED',
+        targetValue,
+        submittedValue: targetValue,
+        verifiedResolution: readResolutionOnView(settings),
+        message: `Resolution and Pending Reason were already correct; no update was needed.`,
+        pendingReasonUpdateStatus: updatePending ? 'NOT_NEEDED' : 'NOT_APPLICABLE',
+        pendingReasonUpdateSuccess: true,
+        verifiedPendingReason: updatePending ? readPendingReasonOnView(settings) : '',
+        pendingReasonUpdateMessage: updatePending
+          ? `Pending Reason already showed “${pendingLabel}”.`
+          : 'Pending Reason auto-update is disabled.'
+      });
+    }
+
+    let select = findResolutionSelect(settings, 'dialog');
+    let openedDialog = Boolean(select);
+    if (!select) {
+      const opened = await openEditIssueDialogForFields();
+      if (!opened.success) {
+        return failedResolutionUpdate(targetValue, '', opened.message);
+      }
+      openedDialog = true;
+      select = await waitForResolutionSelect(settings, 15000, 'dialog');
+    }
+
+    if (!select) {
+      return failedResolutionUpdate(
+        targetValue,
+        '',
+        'The Edit Issue screen opened, but the Resolution select (#resolution) was not found inside the active edit form.'
+      );
+    }
+
+    const fieldset = findPendingReasonFieldset(settings, 'dialog');
+  let pendingResult = {
+      attempted: false,
+      success: !updatePending,
+      status: updatePending ? 'NOT_ATTEMPTED' : 'NOT_APPLICABLE',
+      submittedValue: '',
+      message: updatePending ? '' : 'Pending Reason auto-update is disabled.'
+    };
+
+    const currentValue = String(select.value || '');
+    const currentLabel = normaliseText(select.selectedOptions?.[0]?.textContent || '');
+    const resolutionSatisfiedInDialog = currentValue === targetValue
+      || resolutionMatchesLabel(currentLabel, targetLabel);
+    let pendingSatisfiedInDialog = true;
+    if (updatePending) {
+      if (!fieldset) {
+        if (openedDialog) await cancelEditIssueDialog(select);
+        return failedResolutionUpdate(
+          targetValue,
+          '',
+          'The Edit Issue form did not include the Pending Reason field (customfield_16802).'
+        );
+      }
+      const pendingState = pendingReasonSatisfiedInDialog(settings, fieldset);
+      pendingSatisfiedInDialog = pendingState.satisfied;
+    }
+
+    if (resolutionSatisfiedInDialog && pendingSatisfiedInDialog) {
+      if (openedDialog) await cancelEditIssueDialog(select);
+      return closureUpdateBase({
+        attempted: true,
+        success: true,
+        status: 'NOT_NEEDED',
+        targetValue,
+        submittedValue: currentValue || targetValue,
+        verifiedResolution: currentLabel || readResolutionOnView(settings) || targetLabel,
+        message: 'Resolution and Pending Reason were already correct in Edit Issue; no correction was needed.',
+        pendingReasonUpdateAttempted: true,
+        pendingReasonUpdateSuccess: true,
+        pendingReasonUpdateStatus: updatePending ? 'NOT_NEEDED' : 'NOT_APPLICABLE',
+        pendingReasonUpdateSubmittedValue: pendingValue,
+        verifiedPendingReason: pendingLabel,
+        pendingReasonUpdateMessage: pendingResult.message || `Pending Reason already “${pendingLabel}”.`
+      });
+    }
+
+    let resolutionTouched = false;
+    if (updatePending && fieldset && !pendingSatisfiedInDialog) {
+      pendingResult = {
+        attempted: true,
+        ...applyPendingReasonInDialog(settings, fieldset)
+      };
+      if (!pendingResult.success) {
+        return failedResolutionUpdate(targetValue, targetValue, pendingResult.message, {
+          pendingReasonUpdateAttempted: true,
+          pendingReasonUpdateSuccess: false,
+          pendingReasonUpdateStatus: 'FAILED',
+          pendingReasonUpdateSubmittedValue: pendingResult.submittedValue,
+          pendingReasonUpdateMessage: pendingResult.message
+        });
+      }
+      pendingResult.status = 'UPDATED';
+    }
+
+    if (!resolutionSatisfiedInDialog) {
+      const hasOption = [...select.options].some((option) => String(option.value) === targetValue);
+      if (!hasOption) {
+        if (openedDialog) await cancelEditIssueDialog(select);
+        return failedResolutionUpdate(
+          targetValue,
+          '',
+          `The Resolution select does not contain option value ${targetValue} (“${targetLabel}”).`
+        );
+      }
+      if (!writeSelectValue(select, targetValue)) {
+        return failedResolutionUpdate(targetValue, targetValue, 'Could not set the Resolution value on the select control.');
+      }
+      resolutionTouched = true;
+    }
+
+    if (!resolutionTouched && !pendingResult.attempted) {
+      if (openedDialog) await cancelEditIssueDialog(select);
+      return closureUpdateBase({
+        success: true,
+        status: 'NOT_NEEDED',
+        targetValue,
+        submittedValue: currentValue || targetValue,
+        verifiedResolution: currentLabel || targetLabel,
+        message: 'No Resolution or Pending Reason changes were required.'
+      });
+    }
+
+    const saveControl = findEditIssueSaveControl(select);
+    if (!saveControl) {
+      return failedResolutionUpdate(
+        targetValue,
+        targetValue,
+        'Values were entered, but the Edit Issue Update/Save button was not found.'
+      );
+    }
+
+    dispatchUserLikeClick(saveControl);
+    await sleep(TIMING.DIALOG_SAVE_MS);
+
+    if (findResolutionSelect(settings, 'dialog')) {
+      await submitEditIssueForm(select);
+    }
+
+    let pendingVerification = { success: true, verifiedPendingReason: '' };
+    if (updatePending) {
+      pendingVerification = await waitForSavedPendingReason(pendingLabel, settings, 22000);
+      if (!pendingVerification.success) {
+        const dialogPending = await verifyPendingReasonThroughEditDialog(settings);
+        if (dialogPending.success) pendingVerification = dialogPending;
+      }
+      if (!pendingVerification.success) {
+        return failedResolutionUpdate(
+          targetValue,
+          targetValue,
+          `Edit Issue was submitted, but Pending Reason verification failed. ${pendingVerification.message}`,
+          {
+            pendingReasonUpdateAttempted: true,
+            pendingReasonUpdateSuccess: false,
+            pendingReasonUpdateStatus: 'FAILED',
+            pendingReasonUpdateSubmittedValue: pendingValue,
+            pendingReasonUpdateMessage: pendingVerification.message
+          }
+        );
+      }
+    }
+
+    let resolutionVerification = await waitForSavedResolution(targetValue, targetLabel, settings, 25000);
+    if (!resolutionVerification.success) {
+      const dialogVerification = await verifyResolutionThroughEditDialog(targetValue, targetLabel, settings);
+      if (dialogVerification.success) resolutionVerification = dialogVerification;
+    }
+    if (!resolutionVerification.success) {
+      return failedResolutionUpdate(targetValue, targetValue, resolutionVerification.message, {
+        pendingReasonUpdateAttempted: pendingResult.attempted,
+        pendingReasonUpdateSuccess: pendingResult.success,
+        pendingReasonUpdateStatus: pendingResult.status || 'NOT_ATTEMPTED',
+        pendingReasonUpdateSubmittedValue: pendingResult.submittedValue,
+        verifiedPendingReason: pendingVerification.verifiedPendingReason,
+        pendingReasonUpdateMessage: pendingResult.message
+      });
+    }
+
+    const overallUpdated = resolutionTouched || pendingResult.status === 'UPDATED';
+    return closureUpdateBase({
+      attempted: true,
+      success: true,
+      status: overallUpdated ? 'UPDATED' : 'NOT_NEEDED',
+      targetValue,
+      submittedValue: targetValue,
+      verifiedResolution: resolutionVerification.verifiedResolution || targetLabel,
+      message: overallUpdated
+        ? `Resolution and Pending Reason were updated and verified on the issue.`
+        : `Resolution and Pending Reason were verified on the issue.`,
+      pendingReasonUpdateAttempted: updatePending,
+      pendingReasonUpdateSuccess: updatePending,
+      pendingReasonUpdateStatus: updatePending
+        ? (pendingResult.status === 'UPDATED' ? 'UPDATED' : 'NOT_NEEDED')
+        : 'NOT_APPLICABLE',
+      pendingReasonUpdateSubmittedValue: pendingResult.submittedValue || pendingValue,
+      verifiedPendingReason: pendingVerification.verifiedPendingReason || readPendingReasonOnView(settings),
+      pendingReasonUpdateMessage: pendingResult.message
+        || `Pending Reason verified as “${pendingVerification.verifiedPendingReason || pendingLabel}”.`
+    });
+  }
+
   function findDueDateEditError() {
     const roots = [
       document.querySelector('#due-date')?.closest('dd'),
@@ -1615,6 +2251,8 @@
     cancelOpenDueEditor,
     describeDueEditorState,
     waitForSavedDueDate,
-    findDueDateEditError
+    findDueDateEditError,
+    updateResolutionViaUi,
+    readResolutionOnView
   });
 })();

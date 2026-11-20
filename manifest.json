@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "JIRA Due Date and Quantity Fixer",
-  "version": "1.0.2",
+  "name": "Mark Tickets Complete",
+  "version": "1.0.5",
   "description": "Validates Jira Due and AEM Page Path Quantity, replacing incorrect existing Quantity values and verifying the persisted result.",
   "minimum_chrome_version": "102",
   "permissions": [
@@ -17,7 +17,7 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "JIRA Due Date and Quantity Fixer",
+    "default_title": "Mark Tickets Complete",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

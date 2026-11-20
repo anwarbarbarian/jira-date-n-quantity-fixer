@@ -27,6 +27,11 @@ const elements = {
   quantityViewSelector: document.getElementById('quantityViewSelector'),
   quantityInputSelector: document.getElementById('quantityInputSelector'),
   autoUpdateQuantity: document.getElementById('autoUpdateQuantity'),
+  autoUpdateResolutionOnSuccess: document.getElementById('autoUpdateResolutionOnSuccess'),
+  autoUpdatePendingReasonOnSuccess: document.getElementById('autoUpdatePendingReasonOnSuccess'),
+  resolutionSelectSelector: document.getElementById('resolutionSelectSelector'),
+  resolutionViewSelector: document.getElementById('resolutionViewSelector'),
+  resolutionCompletedValue: document.getElementById('resolutionCompletedValue'),
   startButton: document.getElementById('startButton'),
   stopButton: document.getElementById('stopButton'),
   exportButton: document.getElementById('exportButton'),
@@ -124,7 +129,13 @@ function readSettings() {
     quantityLabel: 'Quantity',
     quantityViewSelector: elements.quantityViewSelector.value,
     quantityInputSelector: elements.quantityInputSelector.value,
-    autoUpdateQuantity: elements.autoUpdateQuantity.checked
+    autoUpdateQuantity: elements.autoUpdateQuantity.checked,
+    autoUpdateResolutionOnSuccess: elements.autoUpdateResolutionOnSuccess.checked,
+    autoUpdatePendingReasonOnSuccess: elements.autoUpdatePendingReasonOnSuccess.checked,
+    resolutionSelectSelector: elements.resolutionSelectSelector.value,
+    resolutionViewSelector: elements.resolutionViewSelector.value,
+    resolutionCompletedValue: elements.resolutionCompletedValue.value,
+    resolutionCompletedLabel: 'Completed'
   };
 }
 
@@ -228,6 +239,14 @@ function renderSettings(state) {
   elements.quantityViewSelector.value = state.settings.quantityViewSelector || elements.quantityViewSelector.value;
   elements.quantityInputSelector.value = state.settings.quantityInputSelector || elements.quantityInputSelector.value;
   elements.autoUpdateQuantity.checked = state.settings.autoUpdateQuantity !== false;
+  elements.autoUpdateResolutionOnSuccess.checked = state.settings.autoUpdateResolutionOnSuccess !== false;
+  elements.autoUpdatePendingReasonOnSuccess.checked = state.settings.autoUpdatePendingReasonOnSuccess !== false;
+  elements.resolutionSelectSelector.value = state.settings.resolutionSelectSelector
+    || elements.resolutionSelectSelector.value;
+  elements.resolutionViewSelector.value = state.settings.resolutionViewSelector
+    || elements.resolutionViewSelector.value;
+  elements.resolutionCompletedValue.value = state.settings.resolutionCompletedValue
+    || elements.resolutionCompletedValue.value;
 }
 
 function renderResults(results) {
@@ -365,7 +384,11 @@ async function exportCsv() {
     'Original Quantity Raw', 'Original Quantity', 'Final Quantity Raw', 'Final Quantity',
     'Quantity Status', 'Quantity Message', 'Quantity Update Attempted', 'Quantity Update Success',
     'Quantity Update Status', 'Quantity Update Target', 'Quantity Update Submitted Value',
-    'Quantity Update Message', 'Field Extraction Notes', 'Error Code', 'Error Message', 'Processed At'
+    'Quantity Update Message', 'Resolution Raw', 'Resolution Update Attempted', 'Resolution Update Success',
+    'Resolution Update Status', 'Resolution Update Target', 'Resolution Update Submitted Value',
+    'Resolution Update Message', 'Pending Reason Raw', 'Pending Reason Update Attempted',
+    'Pending Reason Update Success', 'Pending Reason Update Status', 'Pending Reason Update Submitted Value',
+    'Pending Reason Update Message', 'Field Extraction Notes', 'Error Code', 'Error Message', 'Processed At'
   ];
 
   const rows = response.state.results.map((result) => [
@@ -404,6 +427,19 @@ async function exportCsv() {
     result.quantityUpdateTarget,
     result.quantityUpdateSubmittedValue,
     result.quantityUpdateMessage,
+    result.resolutionRaw,
+    result.resolutionUpdateAttempted ? 'Yes' : 'No',
+    result.resolutionUpdateSuccess ? 'Yes' : 'No',
+    result.resolutionUpdateStatus,
+    result.resolutionUpdateTarget,
+    result.resolutionUpdateSubmittedValue,
+    result.resolutionUpdateMessage,
+    result.pendingReasonRaw,
+    result.pendingReasonUpdateAttempted ? 'Yes' : 'No',
+    result.pendingReasonUpdateSuccess ? 'Yes' : 'No',
+    result.pendingReasonUpdateStatus,
+    result.pendingReasonUpdateSubmittedValue,
+    result.pendingReasonUpdateMessage,
     result.fieldExtractionNotes,
     result.errorCode,
     result.errorMessage,

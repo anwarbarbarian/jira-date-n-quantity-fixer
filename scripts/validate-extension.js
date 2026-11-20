@@ -47,7 +47,7 @@ function checkSyntax(filePath) {
   }
 }
 
-console.log('Validating JIRA Due Date and Quantity Fixer extension...');
+console.log('Validating Mark Tickets Complete extension...');
 console.log(`Manifest version: ${manifest.version}`);
 
 for (const file of requiredFiles) {
